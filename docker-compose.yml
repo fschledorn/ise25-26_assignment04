@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:18
+    restart: always
+    environment:
+      POSTGRES_USER: ccuser
+      POSTGRES_PASSWORD: ccpass
+      POSTGRES_DB: campuscoffee
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ccuser -d campuscoffee"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ise25-26/campuscoffee:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # Database connection
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/campuscoffee
+      SPRING_DATASOURCE_USERNAME: ccuser
+      SPRING_DATASOURCE_PASSWORD: ccpass
+      # JPA/Hibernate configuration
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+      # Flyway configuration (disabled since we use Hibernate DDL)
+      SPRING_FLYWAY_ENABLED: "false"
+      # Logging configuration
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_DE_SEUHD_CAMPUSCOFFEE: DEBUG
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  db-data:

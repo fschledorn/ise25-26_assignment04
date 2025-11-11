@@ -81,23 +81,131 @@ public class PosServiceImpl implements PosService {
 
     /**
      * Converts an OSM node to a POS domain object.
-     * Note: This is a stub implementation and should be replaced with real mapping logic.
+     * <p>
+     * Maps OSM tags to POS fields with validation:
+     * <ul>
+     *   <li>name: Required from tags["name"]</li>
+     *   <li>type: Derived from tags["amenity"] (cafe→CAFE, bakery→BAKERY, restaurant→CAFE)</li>
+     *   <li>address: Required from tags["addr:street"], tags["addr:housenumber"],
+     *       tags["addr:postcode"], tags["addr:city"]</li>
+     *   <li>campus: Derived from postal code (69117→ALTSTADT, 69120→INF)</li>
+     *   <li>description: From tags["description"] or generated from tags["cuisine"]</li>
+     * </ul>
+     *
+     * @param osmNode The OSM node to convert
+     * @return POS domain object ready for persistence
+     * @throws OsmNodeMissingFieldsException if required fields are missing or amenity type is invalid
      */
     private @NonNull Pos convertOsmNodeToPos(@NonNull OsmNode osmNode) {
-        if (osmNode.nodeId().equals(5589879349L)) {
-            return Pos.builder()
-                    .name("Rada Coffee & Rösterei")
-                    .description("Caffé und Rösterei")
-                    .type(PosType.CAFE)
-                    .campus(CampusType.ALTSTADT)
-                    .street("Untere Straße")
-                    .houseNumber("21")
-                    .postalCode(69117)
-                    .city("Heidelberg")
-                    .build();
-        } else {
+        log.debug("Converting OSM node {} to POS", osmNode.nodeId());
+
+        var tags = osmNode.tags();
+
+        // Extract and validate required fields
+        String name = tags.get("name");
+        if (name == null || name.isBlank()) {
+            log.error("OSM node {} missing required 'name' tag", osmNode.nodeId());
             throw new OsmNodeMissingFieldsException(osmNode.nodeId());
         }
+
+        // Map amenity to PosType
+        String amenity = tags.get("amenity");
+        PosType type = mapAmenityToPosType(amenity, osmNode.nodeId());
+
+        // Extract and validate address fields
+        String street = tags.get("addr:street");
+        String houseNumber = tags.get("addr:housenumber");
+        String postalCodeStr = tags.get("addr:postcode");
+        String city = tags.get("addr:city");
+
+        if (street == null || street.isBlank() ||
+            houseNumber == null || houseNumber.isBlank() ||
+            postalCodeStr == null || postalCodeStr.isBlank() ||
+            city == null || city.isBlank()) {
+            log.error("OSM node {} missing required address fields", osmNode.nodeId());
+            throw new OsmNodeMissingFieldsException(osmNode.nodeId());
+        }
+
+        Integer postalCode;
+        try {
+            postalCode = Integer.parseInt(postalCodeStr);
+        } catch (NumberFormatException e) {
+            log.error("OSM node {} has invalid postal code: {}", osmNode.nodeId(), postalCodeStr);
+            throw new OsmNodeMissingFieldsException(osmNode.nodeId());
+        }
+
+        // Derive campus from postal code
+        CampusType campus = deriveCampusFromPostalCode(postalCode, osmNode);
+
+        // Extract or generate description
+        String description = tags.get("description");
+        if (description == null || description.isBlank()) {
+            String cuisine = tags.get("cuisine");
+            if (cuisine != null && !cuisine.isBlank()) {
+                description = String.format("A %s serving %s cuisine", amenity != null ? amenity : "place", cuisine);
+            } else {
+                description = String.format("A %s in %s", amenity != null ? amenity : "place", city);
+            }
+        }
+
+        log.debug("Successfully mapped OSM node {} to POS '{}'", osmNode.nodeId(), name);
+
+        return Pos.builder()
+                .name(name)
+                .description(description)
+                .type(type)
+                .campus(campus)
+                .street(street)
+                .houseNumber(houseNumber)
+                .postalCode(postalCode)
+                .city(city)
+                .build();
+    }
+
+    /**
+     * Maps OSM amenity tag to PosType enum.
+     * Supports: cafe, bakery, restaurant (mapped to CAFE).
+     *
+     * @param amenity The OSM amenity value
+     * @param nodeId  The node ID for error messages
+     * @return Mapped PosType
+     * @throws OsmNodeMissingFieldsException if amenity is invalid or unsupported
+     */
+    private @NonNull PosType mapAmenityToPosType(String amenity, @NonNull Long nodeId) {
+        if (amenity == null || amenity.isBlank()) {
+            log.error("OSM node {} missing 'amenity' tag", nodeId);
+            throw new OsmNodeMissingFieldsException(nodeId);
+        }
+
+        return switch (amenity.toLowerCase()) {
+            case "cafe", "restaurant" -> PosType.CAFE;
+            case "bakery" -> PosType.BAKERY;
+            default -> {
+                log.error("OSM node {} has unsupported amenity type: {}", nodeId, amenity);
+                throw new OsmNodeMissingFieldsException(nodeId);
+            }
+        };
+    }
+
+    /**
+     * Derives campus from postal code.
+     * Supports Heidelberg postal codes: 69117 (ALTSTADT), 69120 (INF).
+     *
+     * @param postalCode The postal code
+     * @param osmNode    The OSM node (for lat/lon fallback if needed)
+     * @return Derived CampusType
+     * @throws OsmNodeMissingFieldsException if postal code doesn't match known campuses
+     */
+    private @NonNull CampusType deriveCampusFromPostalCode(Integer postalCode, @NonNull OsmNode osmNode) {
+        return switch (postalCode) {
+            case 69117 -> CampusType.ALTSTADT;
+            case 69120 -> CampusType.INF;
+            default -> {
+                log.error("OSM node {} has postal code {} that doesn't match known campuses",
+                        osmNode.nodeId(), postalCode);
+                throw new OsmNodeMissingFieldsException(osmNode.nodeId());
+            }
+        };
     }
 
     /**

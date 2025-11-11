@@ -81,4 +81,20 @@ public class TestUtils {
                 )
                 .collect(Collectors.toList());
     }
+
+    /**
+     * Imports a POS from an OpenStreetMap node ID.
+     *
+     * @param nodeId the OSM node ID to import
+     * @return the created POS DTO
+     */
+    public static PosDto importPosFromOsm(Long nodeId) {
+        return given()
+                .contentType(ContentType.JSON)
+                .when()
+                .post("/api/pos/import/osm/{nodeId}", nodeId)
+                .then()
+                .statusCode(201)
+                .extract().as(PosDto.class);
+    }
 }

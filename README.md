@@ -22,7 +22,43 @@ You can use the quiet mode to suppress most log messages:
 mvn clean install -q
 ```
 
-## Start application (dev)
+## Start application
+
+### Option 1: Using Docker Compose (Recommended)
+
+The easiest way to run the entire application stack (PostgreSQL + Spring Boot app) is using Docker Compose:
+
+```shell
+docker compose up --build
+```
+
+This will:
+- Build the application using Maven inside a Docker container
+- Start a PostgreSQL database container
+- Start the Spring Boot application container
+- Expose the API on http://localhost:8080
+
+To run in detached mode (background):
+```shell
+docker compose up --build -d
+```
+
+View logs:
+```shell
+docker compose logs -f app
+```
+
+Stop the stack:
+```shell
+docker compose down
+```
+
+Stop and remove volumes (clears database):
+```shell
+docker compose down -v
+```
+
+### Option 2: Manual startup (dev)
 
 First, make sure that the Docker daemon is running.
 Before you start the application, you first need to start a Postgres docker container:

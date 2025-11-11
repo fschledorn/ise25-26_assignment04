@@ -79,4 +79,46 @@ public class PosSystemTests extends AbstractSysTest {
                 .ignoringFields("createdAt", "updatedAt")
                 .isEqualTo(posToUpdate);
     }
+
+    /**
+     * Integration test for importing a POS from OpenStreetMap.
+     * This test verifies the complete end-to-end flow:
+     * 1. API endpoint receives OSM node ID
+     * 2. Service fetches node data from OSM API
+     * 3. OSM data is converted to POS entity
+     * 4. POS is persisted to database
+     * 5. Created POS is returned via API
+     *
+     * Note: This test uses the real OSM Data Service implementation.
+     * In a production test suite, you might want to mock the external OSM API call
+     * to avoid dependency on external services and ensure deterministic test results.
+     */
+    @Test
+    void importPosFromOsmNode() {
+        // Arrange: Use the example OSM node ID from the prompt (Rada Coffee & Rösterei)
+        Long osmNodeId = 5589879349L;
+
+        // Act: Import POS via API endpoint
+        Pos importedPos = posDtoMapper.toDomain(TestUtils.importPosFromOsm(osmNodeId));
+
+        // Assert: Verify the imported POS has expected values
+        assertThat(importedPos).isNotNull();
+        assertThat(importedPos.id()).isNotNull(); // Should have been assigned an ID
+        assertThat(importedPos.name()).isEqualTo("Rada Coffee & Rösterei");
+        assertThat(importedPos.type()).isIn(de.seuhd.campuscoffee.domain.model.PosType.CAFE);
+        assertThat(importedPos.street()).isEqualTo("Untere Straße");
+        assertThat(importedPos.houseNumber()).isEqualTo("21");
+        assertThat(importedPos.postalCode()).isEqualTo(69117);
+        assertThat(importedPos.city()).isEqualTo("Heidelberg");
+        assertThat(importedPos.campus()).isNotNull();
+        assertThat(importedPos.description()).isNotNull().isNotEmpty();
+        assertThat(importedPos.createdAt()).isNotNull();
+        assertThat(importedPos.updatedAt()).isNotNull();
+
+        // Verify the POS can be retrieved by ID (persistence check)
+        Pos retrievedPos = posDtoMapper.toDomain(TestUtils.retrievePosById(importedPos.id()));
+        assertThat(retrievedPos)
+                .usingRecursiveComparison()
+                .isEqualTo(importedPos);
+    }
 }
